@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+var oldTopStories []int
+var oldStories []story
+
 func getTopStories() ([]int, error) {
 	resp, err := http.Get("https://hacker-news.firebaseio.com/v0/topstories.json")
 	if err != nil {
@@ -85,27 +88,36 @@ func GetStories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the stories
-	stories := make([]story, 30)
-	var storiesWg sync.WaitGroup
+	var stories []story
+	// Cache
+	if eqIntSclice(topStories, oldTopStories) == false {
+		// Get the stories
+		stories = make([]story, 30)
+		var storiesWg sync.WaitGroup
 
-	for i := 0; i < 30; i++ {
-		storiesWg.Add(1)
+		for i := 0; i < 30; i++ {
+			storiesWg.Add(1)
 
-		go func() {
-			defer storiesWg.Done()
+			go func() {
+				defer storiesWg.Done()
 
-			story, err := fetchStory(topStories[i])
-			if err != nil {
-				http.Error(w, "Couldn't fetch a story", http.StatusNotFound)
-				return
-			}
+				story, err := fetchStory(topStories[i])
+				if err != nil {
+					http.Error(w, "Couldn't fetch a story", http.StatusNotFound)
+					return
+				}
 
-			stories[i] = story
-		}()
+				stories[i] = story
+			}()
+		}
+		storiesWg.Wait()
+
+		oldStories = stories
+		oldTopStories = topStories
+
+	} else {
+		stories = oldStories
 	}
-
-	storiesWg.Wait()
 
 	// Sends html response
 	tmpl := template.Must(template.ParseFiles("index.tmpl"))
@@ -115,5 +127,5 @@ func GetStories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Time logging
-	fmt.Printf("It took %v to procces a request\n", time.Now().Sub(timeStart))
+	fmt.Printf("It took %v to procces a request\n", time.Now().Sub(timeStart).Microseconds())
 }
